@@ -736,6 +736,18 @@ var Platform;
                 success_cb(MSApp.createFileFromStorageFile(this.storage_item));
             };
             WinRTFileEntry.prototype.write = function (blob, callback) {
+                var _this = this;
+                var reader = new FileReader();
+                reader.onloadend = function (ev) {
+                    var bytes = new Uint8Array(ev.target.result);
+                    Windows.Storage.FileIO.writeBytesAsync(_this.storage_item, bytes).done(function () {
+                        callback();
+                    });
+                };
+                reader.onerror = function (ev) {
+                    console.log(reader.error);
+                };
+                reader.readAsArrayBuffer(blob);
             };
             return WinRTFileEntry;
         }(WinRTEntry));
@@ -745,8 +757,16 @@ var Platform;
                 _super.apply(this, arguments);
             }
             WinRTDirEntry.prototype.getChildren = function (cb) {
+                this.storage_item.getItemsAsync().done(function (itemList) {
+                    var entryList = itemList.map(function (item) {
+                        return new WinRTEntry(item);
+                    });
+                    cb(entryList);
+                });
             };
             WinRTDirEntry.prototype.getFile = function (name, flags, callback) {
+                this.storage_item.getFileAsync(name).done(function (file) {
+                });
             };
             WinRTDirEntry.prototype.getDirectory = function (name, flags, callback) {
             };
@@ -1082,6 +1102,8 @@ var Platform;
                 reader.onloadend = function (ev) {
                     var bytes = new Uint8Array(ev.target.result);
                     Windows.Storage.FileIO.writeBytesAsync(file, bytes);
+                };
+                reader.onerror = function (ev) {
                 };
                 reader.readAsArrayBuffer(blob);
             }, function (e) {
