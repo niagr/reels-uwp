@@ -24,6 +24,61 @@ namespace Platform.fs {
             getFile(name: string, flags: ICreateFlags, callback: (res: FileEntry, e: Error) => void): void;
             getDirectory(name: string, flags: ICreateFlags, callback: (res: DirEntry) => void): void;
         }
+        
+        
+        /**
+         * Common function for creating a new file or directory from a DirEntry.
+         * 
+         * @param flags - Used to specify whether to create a new entry or not. Defaults to false.
+         *              if neither create nor exclusive are set, if the file does not exist, error will be called. 
+         *              If create is set and exclusive is not set, if the file does not exist it will be created.
+         *              If create is set and exclusive is set, if the file exists, error will be called with an error instance.
+         * 
+         * @param exists - Indicated whether the entry exists or not.
+         * 
+         * @param isType - Callback to determine whether entry is a file/directory.
+         * 
+         * @param createAndReturnItem - Callback to create a new file/directory entry and return it to the caller.
+         * 
+         * @param returnItem - Callback to return an existing entry to the caller.
+         * 
+         * @param error - Callback to return error to caller.
+         *              
+         */
+        function createEntry (
+            flags: ICreateFlags, 
+            exists: boolean, 
+            isType: () => boolean,
+            createAndReturnItem: () => void, 
+            returnItem: () => void, 
+            error: (e: "EEXIST"|"ETYPE"|"ENEXIST") => void 
+        ) {
+            if (flags.create) {
+                if (!exists) {
+                    createAndReturnItem();
+                } else {
+                    if (flags.exclusive) {
+                        error("EEXIST");
+                    } else {
+                        if (!isType) {
+                            error("ETYPE")
+                        } else {
+                            returnItem();
+                        }
+                    }
+                }
+            } else {
+                if (!exists) {
+                    error("ENEXIST");
+                } else {
+                    if (!isType) {
+                        error("ETYPE");
+                    } else {
+                        returnItem();
+                    }
+                }
+            }
+        }
 
 
         class WinRTEntry implements Entry {
@@ -285,7 +340,7 @@ namespace Platform.fs {
             }
 
 
-            getFile(name: string, flags: ICreateFlags, callback: (FileEntry, Error) => void): void {
+            getFile(name: string, flags: ICreateFlags, callback: (f: FileEntry, e: Error) => void): void {
 
                 if (typeof flags == 'undefined' || flags == null) {
                     flags = {
@@ -301,50 +356,50 @@ namespace Platform.fs {
 
                 var stat = fs.stat(file_path, (err, stats) => {
 
+                    let exists: boolean = null;
+                    
+                    if (err != null) {
+                        if (err.code == "ENOENT") {
+                            exists = false;
+                        } else {
+                            callback(null, new Error("Could not stat path " + file_path + ": " + err.message));
+                        }
+                    }
+                    
                     var return_file = () => {
                         callback(new NodeFileEntry(name, this.full_path, this.full_path), null);
                     }
 
                     var create_and_return_file = () => {
                         fs.open(file_path, 'w', function(err, fd) {
+                            if (err)  {
+                                callback(null, Error(`Could not create ${file_path}: ${err.message}`));
+                                return;
+                            }
                             fs.close(fd);
                             return_file();
                         });
                     }
-
-                    if (flags.create) {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                create_and_return_file();
-                            } else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        } else {
-                            if (flags.exclusive) {
-                                console.debug(file_path + " already exists and the exclusive flag is set. Failed.");
-                            } else {
-                                if (stats.isDirectory()) {
-                                    console.debug(file_path + " is a directory. Failed.");
-                                } else {
-                                    return_file();
-                                }
-                            }
-                        }
-                    } else {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                console.debug(file_path + " does not exist and create flag is not set. failed");
-                            } else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        } else {
-                            if (stats.isDirectory()) {
-                                console.debug(file_path + " is a directory. Failed.");
-                            } else {
-                                return_file();
-                            }
+                    
+                    var is_file = () => {
+                        return stats.isFile();
+                    }
+                    
+                    var error = (e) => {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(file_path + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(file_path + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(file_path + " is a directory."));
+                                break;
                         }
                     }
+                    
+                    createEntry(flags, exists, is_file, create_and_return_file, return_file, error);
 
                 });
 
@@ -352,7 +407,7 @@ namespace Platform.fs {
             }
 
 
-            getDirectory (name: string, flags: ICreateFlags, callback: (DirEntry) => void): void {
+            getDirectory (name: string, flags: ICreateFlags, callback: (d: DirEntry, e?: Error) => void): void {
 
                 if (typeof flags == 'undefined') {
                     flags = {
@@ -367,6 +422,16 @@ namespace Platform.fs {
                 var file_path = path.join(this.full_path, name);
 
                 var stat = fs.stat(file_path, (err, stats) => {
+                    
+                    let exists: boolean = null;
+                    
+                    if (err != null) {
+                        if (err.code == "ENOENT") {
+                            exists = false;
+                        } else {
+                            callback(null, new Error("Could not stat path " + file_path + ": " + err.message));
+                        }
+                    }
 
                     var return_dir = () => {
                         callback(new NodeDirEntry(name, this.full_path, this.full_path));
@@ -374,48 +439,34 @@ namespace Platform.fs {
 
                     function create_and_return_dir() {
                         fs.mkdir(file_path, function(err) {
-                            if (err == null) {
-                                return_dir();
-                            } else {
-                                console.debug(err);
+                            if (err) {
+                                callback(null, Error(`Could not create ${file_path}: ${err.message}`));
+                                return;
                             }
+                            return_dir();
 
                         });
                     }
-
-                    if (flags.create) {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                create_and_return_dir();
-                            } else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        } else {
-                            if (flags.exclusive) {
-                                console.debug(file_path + " already exists and the exclusive flag is set. Failed.");
-                            } else {
-                                if (stats.isFile()) {
-                                    console.debug(file_path + " is a file. Failed.");
-                                } else {
-                                    return_dir();
-                                }
-                            }
-                        }
-                    } else {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                console.debug(file_path + " does not exist and create flag is not set. failed");
-                            } else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        } else {
-                            if (stats.isFile()) {
-                                console.debug(file_path + " is a file. Failed.");
-                            } else {
-                                return_dir();
-                            }
+                    
+                    var is_directory = () => {
+                        return stats.isDirectory();
+                    }
+                    
+                    var error = (e) => {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(file_path + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(file_path + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(file_path + " is a file."));
+                                break;
                         }
                     }
+                    
+                    createEntry(flags, exists, is_directory, create_and_return_dir, return_dir, error);
 
                 });
 
@@ -519,25 +570,7 @@ namespace Platform.fs {
 
         }
         
-        export function scratchpad () {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            picker.fileTypeFilter.replaceAll([".jpg", ".bmp", ".gif", ".png", ".txt"] as any);
-            picker.pickSingleFileAsync().then((file) => {
-                var blob = new Blob(["Hi, blob!!"]);
-                var reader = new FileReader();
-                reader.onloadend = (ev) => {
-                    var bytes = new Uint8Array((ev.target as any).result);
-                    Windows.Storage.FileIO.writeBytesAsync(file, bytes as any);
-                }
-                reader.onerror = (ev) => {
-                    
-                }
-                reader.readAsArrayBuffer(blob);
-            }, (e) => {
-                console.log(e);
-            });
-        }
-
+        
 
         export function restoreEntry(id: string, success: (Entry) => void, failure: {(Error): void}) {
 
