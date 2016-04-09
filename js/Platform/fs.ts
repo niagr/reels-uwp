@@ -158,6 +158,10 @@ namespace Platform.fs {
             
             protected storage_item: Windows.Storage.StorageFolder;
             
+            constructor (dir: Windows.Storage.StorageFile) {
+                super(dir);
+            }
+            
             getChildren(cb: (child_list: Entry[]) => any): void {
                 this.storage_item.getItemsAsync().done((itemList: Windows.Storage.IStorageItem[]) => {
                     let entryList = itemList.map((item) => {
