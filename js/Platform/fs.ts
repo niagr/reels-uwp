@@ -158,11 +158,11 @@ namespace Platform.fs {
             
             protected storage_item: Windows.Storage.StorageFolder;
             
-            constructor (dir: Windows.Storage.StorageFile) {
+            constructor (dir: Windows.Storage.IStorageFolder) {
                 super(dir);
             }
             
-            getChildren(cb: (child_list: Entry[]) => any): void {
+            public getChildren(cb: (child_list: Entry[]) => any): void {
                 this.storage_item.getItemsAsync().done((itemList: Windows.Storage.IStorageItem[]) => {
                     let entryList = itemList.map((item) => {
                         return new WinRTEntry(item);
@@ -171,16 +171,121 @@ namespace Platform.fs {
                 });
             }
             
-            getFile(name: string, flags: ICreateFlags, callback: (res: FileEntry, e: Error) => void): void {
-                this.storage_item.getFileAsync(name).done((file) => {
+            private getItem (name: string, itemType: "file"|"dir", flags: ICreateFlags, callback: (res: Entry, e: Error) => void): void {
+                
+                let process = (exists: boolean, item?: Windows.Storage.IStorageItem) => {
                     
-                })
-            }
-            
-            getDirectory(name: string, flags: ICreateFlags, callback: (res: DirEntry) => void): void {
+                    let createAndReturnFile = () => {
+                        this.storage_item.createFileAsync(name).done((file) => {
+                            callback(new WinRTFileEntry(file), null);
+                        }, (e) => {
+                            callback(null, e);
+                        });
+                    }
+                    
+                    let createAndReturnFolder = () => {
+                        this.storage_item.createFolderAsync(name).done((folder) => {
+                            callback(new WinRTDirEntry(folder), null);
+                        }, (e) => {
+                            callback(null, e);
+                        });
+                    }
+                    
+                    let returnFile = () => {
+                        callback(new WinRTFileEntry(item as Windows.Storage.StorageFile), null);
+                    }
+                    
+                    let returnFolder = () => {
+                        callback(new WinRTDirEntry(item as Windows.Storage.StorageFolder), null);
+                    }
+                    
+                    let isFile = () => {
+                        return item.isOfType(Windows.Storage.StorageItemTypes.file);
+                    }
+                    
+                    let isFolder = () => {
+                        return item.isOfType(Windows.Storage.StorageItemTypes.folder);
+                    }
+                    
+                    let errorFile = (e) => {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(name + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(name + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(name + " is a directory."));
+                                break;
+                        }
+                    }
+                    
+                    let errorFolder = (e) => {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(name + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(name + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(name + " is a file."));
+                                break;
+                        }
+                    }
+                    
+                    if (itemType == "file") {
+                        createEntry(flags, exists, isFile, createAndReturnFile, returnFile, errorFile);    
+                    } else {
+                        createEntry(flags, exists, isFolder, createAndReturnFolder, returnFolder, errorFolder);
+                    }
+                    
+                    
+                    
+                }
+                
+                this.storage_item.tryGetItemAsync(name).then((item) => {
+                    if (item == null) {
+                        process(false, null);
+                    }
+                    process(true, item);
+                }).done(null, (e: Error) => {
+                    
+                });
                 
             }
             
+            public getFile(name: string, flags: ICreateFlags, callback: (res: FileEntry, e: Error) => void): void {
+                this.getItem(name, "file", flags, callback);
+                
+            }
+            
+            public getDirectory(name: string, flags: ICreateFlags, callback: (res: DirEntry, e?: Error) => void): void {
+                this.getItem(name, "dir", flags, callback);
+            }
+            
+        }
+        
+        export function scratchpad (name: string) {
+            let picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.fileTypeFilter.replaceAll(['*'] as any);
+            picker.pickSingleFolderAsync().done((folder) => {
+                folder.tryGetItemAsync(name).then((item) => {
+                    if (item == null) {
+                        console.log("file not found");
+                        return;
+                    }
+                    if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                        var file = item as Windows.Storage.StorageFile;
+                        console.log(`Got file: ${file}`);
+                    } else {
+                        throw new Error("Is not a file.");
+                    }
+                }).done(null, (e: Error) => {
+                    console.log(`Caught error: ${e.message}`);
+                });
+            });
         }
 
 

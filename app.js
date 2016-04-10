@@ -691,6 +691,58 @@ var Platform;
 (function (Platform) {
     var fs;
     (function (fs_1) {
+        /**
+         * Common function for creating a new file or directory from a DirEntry.
+         *
+         * @param flags - Used to specify whether to create a new entry or not. Defaults to false.
+         *              if neither create nor exclusive are set, if the file does not exist, error will be called.
+         *              If create is set and exclusive is not set, if the file does not exist it will be created.
+         *              If create is set and exclusive is set, if the file exists, error will be called with an error instance.
+         *
+         * @param exists - Indicated whether the entry exists or not.
+         *
+         * @param isType - Callback to determine whether entry is a file/directory.
+         *
+         * @param createAndReturnItem - Callback to create a new file/directory entry and return it to the caller.
+         *
+         * @param returnItem - Callback to return an existing entry to the caller.
+         *
+         * @param error - Callback to return error to caller.
+         *
+         */
+        function createEntry(flags, exists, isType, createAndReturnItem, returnItem, error) {
+            if (flags.create) {
+                if (!exists) {
+                    createAndReturnItem();
+                }
+                else {
+                    if (flags.exclusive) {
+                        error("EEXIST");
+                    }
+                    else {
+                        if (!isType) {
+                            error("ETYPE");
+                        }
+                        else {
+                            returnItem();
+                        }
+                    }
+                }
+            }
+            else {
+                if (!exists) {
+                    error("ENEXIST");
+                }
+                else {
+                    if (!isType) {
+                        error("ETYPE");
+                    }
+                    else {
+                        returnItem();
+                    }
+                }
+            }
+        }
         var WinRTEntry = (function () {
             function WinRTEntry(_storage_item) {
                 this.storage_item = null;
@@ -753,8 +805,8 @@ var Platform;
         }(WinRTEntry));
         var WinRTDirEntry = (function (_super) {
             __extends(WinRTDirEntry, _super);
-            function WinRTDirEntry() {
-                _super.apply(this, arguments);
+            function WinRTDirEntry(dir) {
+                _super.call(this, dir);
             }
             WinRTDirEntry.prototype.getChildren = function (cb) {
                 this.storage_item.getItemsAsync().done(function (itemList) {
@@ -764,14 +816,106 @@ var Platform;
                     cb(entryList);
                 });
             };
-            WinRTDirEntry.prototype.getFile = function (name, flags, callback) {
-                this.storage_item.getFileAsync(name).done(function (file) {
+            WinRTDirEntry.prototype.getItem = function (name, itemType, flags, callback) {
+                var _this = this;
+                var process = function (exists, item) {
+                    var createAndReturnFile = function () {
+                        _this.storage_item.createFileAsync(name).done(function (file) {
+                            callback(new WinRTFileEntry(file), null);
+                        }, function (e) {
+                            callback(null, e);
+                        });
+                    };
+                    var createAndReturnFolder = function () {
+                        _this.storage_item.createFolderAsync(name).done(function (folder) {
+                            callback(new WinRTDirEntry(folder), null);
+                        }, function (e) {
+                            callback(null, e);
+                        });
+                    };
+                    var returnFile = function () {
+                        callback(new WinRTFileEntry(item), null);
+                    };
+                    var returnFolder = function () {
+                        callback(new WinRTDirEntry(item), null);
+                    };
+                    var isFile = function () {
+                        return item.isOfType(Windows.Storage.StorageItemTypes.file);
+                    };
+                    var isFolder = function () {
+                        return item.isOfType(Windows.Storage.StorageItemTypes.folder);
+                    };
+                    var errorFile = function (e) {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(name + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(name + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(name + " is a directory."));
+                                break;
+                        }
+                    };
+                    var errorFolder = function (e) {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(name + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(name + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(name + " is a file."));
+                                break;
+                        }
+                    };
+                    if (itemType == "file") {
+                        createEntry(flags, exists, isFile, createAndReturnFile, returnFile, errorFile);
+                    }
+                    else {
+                        createEntry(flags, exists, isFolder, createAndReturnFolder, returnFolder, errorFolder);
+                    }
+                };
+                this.storage_item.tryGetItemAsync(name).then(function (item) {
+                    if (item == null) {
+                        process(false, null);
+                    }
+                    process(true, item);
+                }).done(null, function (e) {
                 });
             };
+            WinRTDirEntry.prototype.getFile = function (name, flags, callback) {
+                this.getItem(name, "file", flags, callback);
+            };
             WinRTDirEntry.prototype.getDirectory = function (name, flags, callback) {
+                this.getItem(name, "dir", flags, callback);
             };
             return WinRTDirEntry;
         }(WinRTEntry));
+        function scratchpad(name) {
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.fileTypeFilter.replaceAll(['*']);
+            picker.pickSingleFolderAsync().done(function (folder) {
+                folder.tryGetItemAsync(name).then(function (item) {
+                    if (item == null) {
+                        console.log("file not found");
+                        return;
+                    }
+                    if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                        var file = item;
+                        console.log("Got file: " + file);
+                    }
+                    else {
+                        throw new Error("Is not a file.");
+                    }
+                }).done(null, function (e) {
+                    console.log("Caught error: " + e.message);
+                });
+            });
+        }
+        fs_1.scratchpad = scratchpad;
         // TODO: replace basename with _basename
         var NodeEntry = (function () {
             function NodeEntry(filename, parent_path, parent_full_path) {
@@ -897,56 +1041,45 @@ var Platform;
                 var path = require('path');
                 var file_path = path.join(this.full_path, name);
                 var stat = fs.stat(file_path, function (err, stats) {
+                    var exists = null;
+                    if (err != null) {
+                        if (err.code == "ENOENT") {
+                            exists = false;
+                        }
+                        else {
+                            callback(null, new Error("Could not stat path " + file_path + ": " + err.message));
+                        }
+                    }
                     var return_file = function () {
                         callback(new NodeFileEntry(name, _this.full_path, _this.full_path), null);
                     };
                     var create_and_return_file = function () {
                         fs.open(file_path, 'w', function (err, fd) {
+                            if (err) {
+                                callback(null, Error("Could not create " + file_path + ": " + err.message));
+                                return;
+                            }
                             fs.close(fd);
                             return_file();
                         });
                     };
-                    if (flags.create) {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                create_and_return_file();
-                            }
-                            else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
+                    var is_file = function () {
+                        return stats.isFile();
+                    };
+                    var error = function (e) {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(file_path + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(file_path + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(file_path + " is a directory."));
+                                break;
                         }
-                        else {
-                            if (flags.exclusive) {
-                                console.debug(file_path + " already exists and the exclusive flag is set. Failed.");
-                            }
-                            else {
-                                if (stats.isDirectory()) {
-                                    console.debug(file_path + " is a directory. Failed.");
-                                }
-                                else {
-                                    return_file();
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                console.debug(file_path + " does not exist and create flag is not set. failed");
-                            }
-                            else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        }
-                        else {
-                            if (stats.isDirectory()) {
-                                console.debug(file_path + " is a directory. Failed.");
-                            }
-                            else {
-                                return_file();
-                            }
-                        }
-                    }
+                    };
+                    createEntry(flags, exists, is_file, create_and_return_file, return_file, error);
                 });
             };
             NodeDirEntry.prototype.getDirectory = function (name, flags, callback) {
@@ -961,60 +1094,44 @@ var Platform;
                 var path = require('path');
                 var file_path = path.join(this.full_path, name);
                 var stat = fs.stat(file_path, function (err, stats) {
+                    var exists = null;
+                    if (err != null) {
+                        if (err.code == "ENOENT") {
+                            exists = false;
+                        }
+                        else {
+                            callback(null, new Error("Could not stat path " + file_path + ": " + err.message));
+                        }
+                    }
                     var return_dir = function () {
                         callback(new NodeDirEntry(name, _this.full_path, _this.full_path));
                     };
                     function create_and_return_dir() {
                         fs.mkdir(file_path, function (err) {
-                            if (err == null) {
-                                return_dir();
+                            if (err) {
+                                callback(null, Error("Could not create " + file_path + ": " + err.message));
+                                return;
                             }
-                            else {
-                                console.debug(err);
-                            }
+                            return_dir();
                         });
                     }
-                    if (flags.create) {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                create_and_return_dir();
-                            }
-                            else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
+                    var is_directory = function () {
+                        return stats.isDirectory();
+                    };
+                    var error = function (e) {
+                        switch (e) {
+                            case "EEXIST":
+                                callback(null, new Error(file_path + " already exists and the exclusive flag is set."));
+                                break;
+                            case "ENEXIST":
+                                callback(null, new Error(file_path + " does not exist and create flag is not set."));
+                                break;
+                            case "ETYPE":
+                                callback(null, new Error(file_path + " is a file."));
+                                break;
                         }
-                        else {
-                            if (flags.exclusive) {
-                                console.debug(file_path + " already exists and the exclusive flag is set. Failed.");
-                            }
-                            else {
-                                if (stats.isFile()) {
-                                    console.debug(file_path + " is a file. Failed.");
-                                }
-                                else {
-                                    return_dir();
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        if (err != null) {
-                            if (err.code == "ENOENT") {
-                                console.debug(file_path + " does not exist and create flag is not set. failed");
-                            }
-                            else {
-                                console.debug("sometihng went wrong stating " + file_path);
-                            }
-                        }
-                        else {
-                            if (stats.isFile()) {
-                                console.debug(file_path + " is a file. Failed.");
-                            }
-                            else {
-                                return_dir();
-                            }
-                        }
-                    }
+                    };
+                    createEntry(flags, exists, is_directory, create_and_return_dir, return_dir, error);
                 });
             };
             return NodeDirEntry;
@@ -1093,24 +1210,6 @@ var Platform;
             return JSON.stringify([entry.get_full_path(), entry.get_base_name()]);
         }
         fs_1.retainEntry = retainEntry;
-        function scratchpad() {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            picker.fileTypeFilter.replaceAll([".jpg", ".bmp", ".gif", ".png", ".txt"]);
-            picker.pickSingleFileAsync().then(function (file) {
-                var blob = new Blob(["Hi, blob!!"]);
-                var reader = new FileReader();
-                reader.onloadend = function (ev) {
-                    var bytes = new Uint8Array(ev.target.result);
-                    Windows.Storage.FileIO.writeBytesAsync(file, bytes);
-                };
-                reader.onerror = function (ev) {
-                };
-                reader.readAsArrayBuffer(blob);
-            }, function (e) {
-                console.log(e);
-            });
-        }
-        fs_1.scratchpad = scratchpad;
         function restoreEntry(id, success, failure) {
             var fs = require('fs');
             var path = require('path');
