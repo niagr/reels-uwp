@@ -1,4 +1,22 @@
 namespace Platform.fs {
+    
+    
+        export function init () {
+            if (Platform.platform == 'WinRT') {
+                chooseEntry = chooseEntryWinRT;
+                openFileWithSystemDefault = openFileWithSystemDefaultWinRT;
+                openURLWithSystemDefault = openURLWithSystemDefaultWinRT;
+                appDataDir = appDataDirWinRT;
+                retainEntry = retainEntryWinRT;
+                restoreEntry = restoreEntryWinRT;
+            } else if (Platform.platform == 'node-webkit') {
+                chooseEntry = chooseEntryNW;
+                openFileWithSystemDefault = openFileWithSystemDefaultNW;
+                appDataDir = appDataDirNW;
+                retainEntry = retainEntryNW;
+                restoreEntry = restoreEntryNW;
+            }
+        }
 
 
         export interface ICreateFlags {
@@ -81,11 +99,13 @@ namespace Platform.fs {
         }
 
 
-        class WinRTEntry implements Entry {
+        abstract class WinRTEntry implements Entry {
             
             protected storage_item: Windows.Storage.IStorageItem = null;
             
-            constructor (_storage_item? : Windows.Storage.IStorageItem) {
+            constructor (_storage_item : Windows.Storage.IStorageItem) {
+                if (!_storage_item)
+                    throw new Error("Cannot create entry: storage item is null or undefined");
                 this.storage_item = _storage_item;
             }
             
@@ -108,9 +128,19 @@ namespace Platform.fs {
             getParentDirectory(): Promise<WinRTDirEntry> {
                 return new Promise<WinRTDirEntry>((resolve, reject) => {
                     this.storage_item.getParentAsync().done((parent) => {
-                        resolve(new WinRTDirEntry(parent));
-                    });
+                        if (parent)
+                            resolve(new WinRTDirEntry(parent));
+                        else reject(new Error("Could not get parent folder for " + this.storage_item.name));
+                    }, reject);
                 });
+            }
+            
+            /**
+             * Ugly hack to allow access to the native file for passing to other WinRT APIs.
+             * It's okay as long as this class is not exported.
+             */
+            getStorageItem (): Windows.Storage.IStorageItem {
+                return this.storage_item;
             }
             
         }
@@ -141,15 +171,28 @@ namespace Platform.fs {
                 var reader = new FileReader();
                 reader.onloadend = (ev) => {
                     var bytes = new Uint8Array((ev.target as any).result);
-                    Windows.Storage.FileIO.writeBytesAsync(this.storage_item, bytes as any).done(() => {
-                        callback();
-                    });
+                    try {
+                        Windows.Storage.FileIO.writeBytesAsync(this.storage_item, bytes as any).done(() => {
+                            callback();
+                        });
+                    } catch (e) {
+                        console.log(e.message);
+                    }
+                    
                 }
                 reader.onerror = (ev) => {
                     console.log(reader.error);
                 }
                 reader.readAsArrayBuffer(blob);
             }
+            
+            /**
+             * Ugly hack to allow access to the native file for passing to other WinRT APIs.
+             * It's okay as long as this class is not exported.
+             */
+            // getStorageFile (): Windows.Storage.StorageFile {
+            //     return this.storage_item;
+            // }
             
         }
         
@@ -165,7 +208,12 @@ namespace Platform.fs {
             public getChildren(cb: (child_list: Entry[]) => any): void {
                 this.storage_item.getItemsAsync().done((itemList: Windows.Storage.IStorageItem[]) => {
                     let entryList = itemList.map((item) => {
-                        return new WinRTEntry(item);
+                        if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                            return new WinRTFileEntry(item as Windows.Storage.StorageFile);    
+                        } else if (item.isOfType(Windows.Storage.StorageItemTypes.folder)) {
+                            return new WinRTDirEntry(item as Windows.Storage.StorageFolder);
+                        }
+                        
                     });
                     cb(entryList);
                 });
@@ -268,24 +316,7 @@ namespace Platform.fs {
         }
         
         export function scratchpad (name: string) {
-            let picker = new Windows.Storage.Pickers.FolderPicker();
-            picker.fileTypeFilter.replaceAll(['*'] as any);
-            picker.pickSingleFolderAsync().done((folder) => {
-                folder.tryGetItemAsync(name).then((item) => {
-                    if (item == null) {
-                        console.log("file not found");
-                        return;
-                    }
-                    if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
-                        var file = item as Windows.Storage.StorageFile;
-                        console.log(`Got file: ${file}`);
-                    } else {
-                        throw new Error("Is not a file.");
-                    }
-                }).done(null, (e: Error) => {
-                    console.log(`Caught error: ${e.message}`);
-                });
-            });
+            
         }
 
 
@@ -585,8 +616,9 @@ namespace Platform.fs {
         }
 
 
-        function chooseEntryNW (chooser_type: string, success: {(res: Entry): void}, failure) {
+        export let chooseEntry: (chooser_type: string, success: { (res: Entry): void }, failure) => void;
 
+        function chooseEntryNW (chooser_type: 'file'|'directory', success: {(res: Entry): void}, failure) {
 
             var chooser = document.createElement('input');
             chooser.setAttribute('type', 'file');
@@ -613,16 +645,24 @@ namespace Platform.fs {
             
         }
 
-        function chooseEntryWinRT (chooser_type: string, success: { (res: Entry): void }, failure) {
-            console.log("file chooser");
+        function chooseEntryWinRT (chooser_type: 'file'|'directory', success: { (res: Entry): void }, failure?: (e: Error) => void) {
+            if (chooser_type == 'directory') {
+                let dirPicker = new Windows.Storage.Pickers.FolderPicker();
+                dirPicker.fileTypeFilter.replaceAll(["*"] as any);
+                dirPicker.pickSingleFolderAsync().done((folder) => {
+                    success(new WinRTDirEntry(folder));
+                }, failure);
+            } else if (chooser_type == 'file') {
+                let filePicker = new Windows.Storage.Pickers.FileOpenPicker();
+                filePicker.fileTypeFilter.replaceAll(["*"] as any);
+                filePicker.pickSingleFileAsync().done((file) => {
+                    success(new WinRTFileEntry(file));
+                }, failure);
+            } else {
+                throw new Error('chooser_type has to be "file" or "directory"');
+            }
         }
 
-        export let chooseEntry: (chooser_type: string, success: { (res: Entry): void }, failure) => void;
-
-        chooseEntry = (
-            Platform.platform === 'node-webkit' ? chooseEntryNW :
-            Platform.platform === 'WinRT' ? chooseEntryWinRT : null
-        );
         
         
         /**
@@ -630,21 +670,45 @@ namespace Platform.fs {
          * 
          * @param file The file to open.
          */
-        export function openWithSystemDefault(file: Platform.fs.Entry) {
+        export let openFileWithSystemDefault: (file: Platform.fs.Entry) => void;
+        
+        function openFileWithSystemDefaultNW(file: Platform.fs.Entry) {
             if (Platform.platform === 'node-webkit') {
                 let gui = require('nw.gui');
                 let nw_entry: NodeEntry = file as NodeEntry;
                 gui.Shell.openItem(nw_entry.get_full_path());
             }
         }
-
+        
+        Windows.System.Launcher.launchUriAsync
+        
+        function openFileWithSystemDefaultWinRT(file: Platform.fs.Entry) {
+            if (file.isFile()) {
+                let winrt_file_entry = file as WinRTFileEntry;
+                Windows.System.Launcher.launchFileAsync(winrt_file_entry.getStorageItem() as Windows.Storage.StorageFile);    
+            } else if (file.isDirectory()) {
+                let winrt_dir_entry = file as WinRTDirEntry;
+                Windows.System.Launcher.launchFolderAsync(winrt_dir_entry.getStorageItem() as Windows.Storage.StorageFolder);
+            }
+            
+        }
+        
+        export let openURLWithSystemDefault: (url: string) => void;
+        
+        function openURLWithSystemDefaultWinRT (url: string) {
+            Windows.System.Launcher.launchUriAsync(new Windows.Foundation.Uri(url));
+           
+        }
+        
 
         /**
          * Returns a DirEntry for the applications data directory
          * 
          * @param callback Called with the DirEntry for the data directory.
         */
-        export function appDataDir (callback: (d: DirEntry) => void) {
+        export let appDataDir: (callback: (d: DirEntry) => void) => void;
+        
+        function appDataDirNW (callback: (d: DirEntry) => void) {
 
             var gui = require('nw.gui');
             var path = require('path');
@@ -671,17 +735,29 @@ namespace Platform.fs {
             callback(new NodeDirEntry(basename, undefined, parent_full_path));
 
         }
+        
+        function appDataDirWinRT (callback: (d: DirEntry) => void) {
+                callback(new WinRTDirEntry(Windows.Storage.ApplicationData.current.localFolder));
+        }
+        
+        
+        export let retainEntry: (entry: Entry) => any;
 
-
-        export function retainEntry(entry: Entry) {
+        function retainEntryNW (entry: Entry): string {
 
             return JSON.stringify([(entry as NodeEntry).get_full_path(), entry.get_base_name()]);
 
         }
         
+        function retainEntryWinRT (entry: Entry): string {
+            return Windows.Storage.AccessCache.StorageApplicationPermissions.futureAccessList.add((entry as WinRTEntry).getStorageItem());
+        }
+        
         
 
-        export function restoreEntry(id: string, success: (Entry) => void, failure: {(Error): void}) {
+        export let restoreEntry: (id: string, success: (Entry) => void, failure: {(Error): void}) => void;
+
+        function restoreEntryNW(id: string, success: (Entry) => void, failure: {(Error): void}) {
 
             var fs = require('fs');
             var path = require('path');
@@ -708,6 +784,20 @@ namespace Platform.fs {
             } else if (stat.isDirectory()) {
                 success(new NodeDirEntry(basename, root_parent_path, full_parent_path));
             }
+
+        }
+        
+        function restoreEntryWinRT (id: string, success: (e: Entry) => void, failure: {(e: Error): void}) {
+
+            Windows.Storage.AccessCache.StorageApplicationPermissions.futureAccessList.getItemAsync(id).done((storageItem) => {
+                if (storageItem.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                    success(new WinRTFileEntry(storageItem as Windows.Storage.StorageFile));
+                } else if (storageItem.isOfType(Windows.Storage.StorageItemTypes.folder)) {
+                    success(new WinRTDirEntry(storageItem as Windows.Storage.StorageFolder));
+                } 
+            }, (err) => {
+                failure(new Error(`Count not restore entry: ${err.message}`));
+            });
 
         }
 

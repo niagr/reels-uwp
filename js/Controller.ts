@@ -141,19 +141,20 @@ class Controller {
 			// we excute the asynchronous read
 			dir.getChildren(onGetChildren);
 
-			function onGetChildren(child_list: Platform.fs.FileEntry[]) {
+			function onGetChildren(child_list: Platform.fs.Entry[]) {
 
 
-				file_list = file_list.concat(child_list);
+				//file_list = file_list.concat(child_list);
 
 				if (child_list.length > 0) {
-					child_list.forEach(function(entry: any) {
+					child_list.forEach(function(entry) {
 
 						if (entry.isDirectory()) {
 //							say((Array(rec_level + 1).join(" ")) + "-- DIRECTORY: " + entry.name);
 							// load the files of this directory
-							rec_load_files(entry, rec_level + 1, callback);
+							rec_load_files(entry as Platform.fs.DirEntry, rec_level + 1, callback);
 						} else {
+							file_list.push(entry as Platform.fs.FileEntry);
 //							say((Array(rec_level + 1).join(" ")) + "-- " + entry.name);
 						}
 

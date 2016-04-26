@@ -10,8 +10,8 @@ $("document").ready(main);
 function say(str) {
 	console.log(str);
 }
-
+var controller;
 function main() {
-
-	var controller = new Controller();
+	Platform.init();
+	controller = new Controller();
 }

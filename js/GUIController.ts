@@ -99,10 +99,13 @@ class GUIController {
     }
 
 	private init_ui () {
+        
+        console.log("initializing UI");
 
         this.$toolbar.append(this.searchbox.$main_container);
 
         $("#add-button").click(() => {
+            console.log("clicked");
 			Platform.fs.chooseEntry("directory", (entry: Platform.fs.DirEntry) => {
 				console.log("selected directory " + entry.get_base_name());
 				this.controller.load_new_movies_from_dir(entry);
@@ -249,22 +252,23 @@ class GUIController {
 
     private play_movie (movie_item: MovieItem) {
 
-        Platform.fs.openWithSystemDefault(movie_item.movie.video_file);
+        Platform.fs.openFileWithSystemDefault(movie_item.movie.video_file);
 
     }
 
     private open_containing_directory (movie_item: MovieItem) {
         
         movie_item.movie.video_file.getParentDirectory().then((dir) => {
-            Platform.fs.openWithSystemDefault(dir);
+            Platform.fs.openFileWithSystemDefault(dir);
+        }, (err) => {
+            console.log(err.message);
         });
         
     }
 
     private open_imdb_page (movie_item: MovieItem) {
         const IMDB_BASE_URL = "http://www.imdb.com/title/";
-        var gui = require('nw.gui');
-        gui.Shell.openItem( IMDB_BASE_URL + movie_item.movie.movie_info.imdb_id);
+        Platform.fs.openURLWithSystemDefault(IMDB_BASE_URL + movie_item.movie.movie_info.imdb_id);
     }
 
 

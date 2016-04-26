@@ -10,8 +10,10 @@ $("document").ready(main);
 function say(str) {
     console.log(str);
 }
+var controller;
 function main() {
-    var controller = new Controller();
+    Platform.init();
+    controller = new Controller();
 }
 // This object controls the general tasks except the view.
 //var say: Function;
@@ -98,7 +100,7 @@ var Controller = (function () {
             // we excute the asynchronous read
             dir.getChildren(onGetChildren);
             function onGetChildren(child_list) {
-                file_list = file_list.concat(child_list);
+                //file_list = file_list.concat(child_list);
                 if (child_list.length > 0) {
                     child_list.forEach(function (entry) {
                         if (entry.isDirectory()) {
@@ -107,6 +109,7 @@ var Controller = (function () {
                             rec_load_files(entry, rec_level + 1, callback);
                         }
                         else {
+                            file_list.push(entry);
                         }
                     });
                 }
@@ -319,8 +322,10 @@ var GUIController = (function () {
     }
     GUIController.prototype.init_ui = function () {
         var _this = this;
+        console.log("initializing UI");
         this.$toolbar.append(this.searchbox.$main_container);
         $("#add-button").click(function () {
+            console.log("clicked");
             Platform.fs.chooseEntry("directory", function (entry) {
                 console.log("selected directory " + entry.get_base_name());
                 _this.controller.load_new_movies_from_dir(entry);
@@ -436,17 +441,18 @@ var GUIController = (function () {
         this.add_genres(movie.movie_info.genres);
     };
     GUIController.prototype.play_movie = function (movie_item) {
-        Platform.fs.openWithSystemDefault(movie_item.movie.video_file);
+        Platform.fs.openFileWithSystemDefault(movie_item.movie.video_file);
     };
     GUIController.prototype.open_containing_directory = function (movie_item) {
         movie_item.movie.video_file.getParentDirectory().then(function (dir) {
-            Platform.fs.openWithSystemDefault(dir);
+            Platform.fs.openFileWithSystemDefault(dir);
+        }, function (err) {
+            console.log(err.message);
         });
     };
     GUIController.prototype.open_imdb_page = function (movie_item) {
         var IMDB_BASE_URL = "http://www.imdb.com/title/";
-        var gui = require('nw.gui');
-        gui.Shell.openItem(IMDB_BASE_URL + movie_item.movie.movie_info.imdb_id);
+        Platform.fs.openURLWithSystemDefault(IMDB_BASE_URL + movie_item.movie.movie_info.imdb_id);
     };
     GUIController.prototype.stop_movie = function () {
         // TODO: Remove this dead code
@@ -691,6 +697,24 @@ var Platform;
 (function (Platform) {
     var fs;
     (function (fs_1) {
+        function init() {
+            if (Platform.platform == 'WinRT') {
+                fs_1.chooseEntry = chooseEntryWinRT;
+                fs_1.openFileWithSystemDefault = openFileWithSystemDefaultWinRT;
+                fs_1.openURLWithSystemDefault = openURLWithSystemDefaultWinRT;
+                fs_1.appDataDir = appDataDirWinRT;
+                fs_1.retainEntry = retainEntryWinRT;
+                fs_1.restoreEntry = restoreEntryWinRT;
+            }
+            else if (Platform.platform == 'node-webkit') {
+                fs_1.chooseEntry = chooseEntryNW;
+                fs_1.openFileWithSystemDefault = openFileWithSystemDefaultNW;
+                fs_1.appDataDir = appDataDirNW;
+                fs_1.retainEntry = retainEntryNW;
+                fs_1.restoreEntry = restoreEntryNW;
+            }
+        }
+        fs_1.init = init;
         /**
          * Common function for creating a new file or directory from a DirEntry.
          *
@@ -746,6 +770,8 @@ var Platform;
         var WinRTEntry = (function () {
             function WinRTEntry(_storage_item) {
                 this.storage_item = null;
+                if (!_storage_item)
+                    throw new Error("Cannot create entry: storage item is null or undefined");
                 this.storage_item = _storage_item;
             }
             WinRTEntry.prototype.isDirectory = function () {
@@ -764,9 +790,19 @@ var Platform;
                 var _this = this;
                 return new Promise(function (resolve, reject) {
                     _this.storage_item.getParentAsync().done(function (parent) {
-                        resolve(new WinRTDirEntry(parent));
-                    });
+                        if (parent)
+                            resolve(new WinRTDirEntry(parent));
+                        else
+                            reject(new Error("Could not get parent folder for " + _this.storage_item.name));
+                    }, reject);
                 });
+            };
+            /**
+             * Ugly hack to allow access to the native file for passing to other WinRT APIs.
+             * It's okay as long as this class is not exported.
+             */
+            WinRTEntry.prototype.getStorageItem = function () {
+                return this.storage_item;
             };
             return WinRTEntry;
         }());
@@ -792,9 +828,14 @@ var Platform;
                 var reader = new FileReader();
                 reader.onloadend = function (ev) {
                     var bytes = new Uint8Array(ev.target.result);
-                    Windows.Storage.FileIO.writeBytesAsync(_this.storage_item, bytes).done(function () {
-                        callback();
-                    });
+                    try {
+                        Windows.Storage.FileIO.writeBytesAsync(_this.storage_item, bytes).done(function () {
+                            callback();
+                        });
+                    }
+                    catch (e) {
+                        console.log(e.message);
+                    }
                 };
                 reader.onerror = function (ev) {
                     console.log(reader.error);
@@ -811,7 +852,12 @@ var Platform;
             WinRTDirEntry.prototype.getChildren = function (cb) {
                 this.storage_item.getItemsAsync().done(function (itemList) {
                     var entryList = itemList.map(function (item) {
-                        return new WinRTEntry(item);
+                        if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                            return new WinRTFileEntry(item);
+                        }
+                        else if (item.isOfType(Windows.Storage.StorageItemTypes.folder)) {
+                            return new WinRTDirEntry(item);
+                        }
                     });
                     cb(entryList);
                 });
@@ -895,25 +941,6 @@ var Platform;
             return WinRTDirEntry;
         }(WinRTEntry));
         function scratchpad(name) {
-            var picker = new Windows.Storage.Pickers.FolderPicker();
-            picker.fileTypeFilter.replaceAll(['*']);
-            picker.pickSingleFolderAsync().done(function (folder) {
-                folder.tryGetItemAsync(name).then(function (item) {
-                    if (item == null) {
-                        console.log("file not found");
-                        return;
-                    }
-                    if (item.isOfType(Windows.Storage.StorageItemTypes.file)) {
-                        var file = item;
-                        console.log("Got file: " + file);
-                    }
-                    else {
-                        throw new Error("Is not a file.");
-                    }
-                }).done(null, function (e) {
-                    console.log("Caught error: " + e.message);
-                });
-            });
         }
         fs_1.scratchpad = scratchpad;
         // TODO: replace basename with _basename
@@ -1160,29 +1187,46 @@ var Platform;
             chooser.click();
         }
         function chooseEntryWinRT(chooser_type, success, failure) {
-            console.log("file chooser");
+            if (chooser_type == 'directory') {
+                var dirPicker = new Windows.Storage.Pickers.FolderPicker();
+                dirPicker.fileTypeFilter.replaceAll(["*"]);
+                dirPicker.pickSingleFolderAsync().done(function (folder) {
+                    success(new WinRTDirEntry(folder));
+                }, failure);
+            }
+            else if (chooser_type == 'file') {
+                var filePicker = new Windows.Storage.Pickers.FileOpenPicker();
+                filePicker.fileTypeFilter.replaceAll(["*"]);
+                filePicker.pickSingleFileAsync().done(function (file) {
+                    success(new WinRTFileEntry(file));
+                }, failure);
+            }
+            else {
+                throw new Error('chooser_type has to be "file" or "directory"');
+            }
         }
-        fs_1.chooseEntry = (Platform.platform === 'node-webkit' ? chooseEntryNW :
-            Platform.platform === 'WinRT' ? chooseEntryWinRT : null);
-        /**
-         * Opens a file with the system's default app.
-         *
-         * @param file The file to open.
-         */
-        function openWithSystemDefault(file) {
+        function openFileWithSystemDefaultNW(file) {
             if (Platform.platform === 'node-webkit') {
                 var gui = require('nw.gui');
                 var nw_entry = file;
                 gui.Shell.openItem(nw_entry.get_full_path());
             }
         }
-        fs_1.openWithSystemDefault = openWithSystemDefault;
-        /**
-         * Returns a DirEntry for the applications data directory
-         *
-         * @param callback Called with the DirEntry for the data directory.
-        */
-        function appDataDir(callback) {
+        Windows.System.Launcher.launchUriAsync;
+        function openFileWithSystemDefaultWinRT(file) {
+            if (file.isFile()) {
+                var winrt_file_entry = file;
+                Windows.System.Launcher.launchFileAsync(winrt_file_entry.getStorageItem());
+            }
+            else if (file.isDirectory()) {
+                var winrt_dir_entry = file;
+                Windows.System.Launcher.launchFolderAsync(winrt_dir_entry.getStorageItem());
+            }
+        }
+        function openURLWithSystemDefaultWinRT(url) {
+            Windows.System.Launcher.launchUriAsync(new Windows.Foundation.Uri(url));
+        }
+        function appDataDirNW(callback) {
             var gui = require('nw.gui');
             var path = require('path');
             var fs = require('fs');
@@ -1205,12 +1249,16 @@ var Platform;
             var parent_full_path = path.dirname(data_dir);
             callback(new NodeDirEntry(basename, undefined, parent_full_path));
         }
-        fs_1.appDataDir = appDataDir;
-        function retainEntry(entry) {
+        function appDataDirWinRT(callback) {
+            callback(new WinRTDirEntry(Windows.Storage.ApplicationData.current.localFolder));
+        }
+        function retainEntryNW(entry) {
             return JSON.stringify([entry.get_full_path(), entry.get_base_name()]);
         }
-        fs_1.retainEntry = retainEntry;
-        function restoreEntry(id, success, failure) {
+        function retainEntryWinRT(entry) {
+            return Windows.Storage.AccessCache.StorageApplicationPermissions.futureAccessList.add(entry.getStorageItem());
+        }
+        function restoreEntryNW(id, success, failure) {
             var fs = require('fs');
             var path = require('path');
             try {
@@ -1238,12 +1286,44 @@ var Platform;
                 success(new NodeDirEntry(basename, root_parent_path, full_parent_path));
             }
         }
-        fs_1.restoreEntry = restoreEntry;
+        function restoreEntryWinRT(id, success, failure) {
+            Windows.Storage.AccessCache.StorageApplicationPermissions.futureAccessList.getItemAsync(id).done(function (storageItem) {
+                if (storageItem.isOfType(Windows.Storage.StorageItemTypes.file)) {
+                    success(new WinRTFileEntry(storageItem));
+                }
+                else if (storageItem.isOfType(Windows.Storage.StorageItemTypes.folder)) {
+                    success(new WinRTDirEntry(storageItem));
+                }
+            }, function (err) {
+                failure(new Error("Count not restore entry: " + err.message));
+            });
+        }
     })(fs = Platform.fs || (Platform.fs = {}));
 })(Platform || (Platform = {}));
 var Platform;
 (function (Platform) {
-    Platform.localStorage = {
+    Platform.platform = "unknown";
+    /**
+     * Initialises the Platform layer. Call before using any other function in this module.
+     */
+    function init() {
+        if (typeof Windows !== 'undefined') {
+            Platform.platform = 'WinRT';
+        }
+        else if (typeof module !== 'undefined') {
+            Platform.platform = "node-webkit";
+        }
+        console.log("Platform detected: " + Platform.platform);
+        if (Platform.platform == 'WinRT') {
+            Platform.localStorage = localStorageNW;
+        }
+        else if (Platform.platform == 'node-webkit') {
+            Platform.localStorage = localStorageNW;
+        }
+        Platform.fs.init();
+    }
+    Platform.init = init;
+    var localStorageNW = {
         /*
             Pass a key-value pair to be stored.
             Value has to be an object that represents a valid JSON. Bad things happen if it does not.
@@ -1256,28 +1336,24 @@ var Platform;
         setJSON: function (entry, callback) {
             // Check entry is object
             if (typeof entry != "object") {
-                console.debug("entry is not an object");
-                return;
+                callback(new Error("Could not store item: entry is not an object"));
+                ;
             }
             else 
             // check entry has only one member
             if (Object.keys(entry).length != 1) {
-                console.debug("entry is longer than one key-value pair");
-                return;
+                callback(new Error("Could not store item: entry is longer than one key-value pair"));
             }
             var key = Object.keys(entry)[0];
             var value = entry[key];
-            // node-webkit implementation
-            if (Platform.platform == "node-webkit") {
-                if (typeof value == "object" || typeof value == "array") {
-                    value = JSON.stringify(value);
-                }
-                else {
-                    console.debug("Value of item has to be a valid JSON-able object or array");
-                }
-                window.localStorage.setItem(key, value);
-                callback();
+            if (typeof value == "object" || typeof value == "array") {
+                value = JSON.stringify(value);
             }
+            else {
+                callback(new Error("Could not store item: Value of item has to be a valid JSON-able object or array"));
+            }
+            window.localStorage.setItem(key, value);
+            callback(null);
         },
         /*
             Retrieves the value of the passed key
@@ -1289,47 +1365,33 @@ var Platform;
                     error: Error if key was not found.
         */
         get: function (query, callback) {
+            console.log('get');
             if (typeof query == "array") {
             }
             else if (typeof query == "string") {
-                if (Platform.platform == "node-webkit") {
-                    var value = window.localStorage.getItem(query);
-                    if (value == null)
-                        callback(null, Error('Key was not found'));
-                    else
-                        callback(JSON.parse(value));
-                }
+                var value = window.localStorage.getItem(query);
+                if (value == null)
+                    callback(null, Error('Key was not found'));
+                else
+                    callback(JSON.parse(value));
             }
             else if (query == null) {
-                if (Platform.platform == "node-webkit") {
-                    var key, value;
-                    var obj = {};
-                    for (var iii = 0; iii < window.localStorage.length; iii++) {
-                        key = window.localStorage.key(iii);
-                        value = window.localStorage.getItem(key);
-                        try {
-                            value = JSON.parse(value);
-                        }
-                        catch (e) {
-                        }
-                        obj[key] = value;
+                var key, value;
+                var obj = {};
+                for (var iii = 0; iii < window.localStorage.length; iii++) {
+                    key = window.localStorage.key(iii);
+                    value = window.localStorage.getItem(key);
+                    try {
+                        value = JSON.parse(value);
                     }
-                    callback(obj);
+                    catch (e) {
+                    }
+                    obj[key] = value;
                 }
+                callback(obj);
             }
         }
     };
-})(Platform || (Platform = {}));
-var Platform;
-(function (Platform) {
-    Platform.platform = "unknown";
-    if (typeof Windows !== 'undefined') {
-        Platform.platform = 'WinRT';
-    }
-    else if (typeof module !== 'undefined') {
-        Platform.platform = "node-webkit";
-    }
-    console.log("Platform detected: " + Platform.platform);
 })(Platform || (Platform = {}));
 /*  Search box widget. NOTE: Currently doesn't position itself:
     @search_cb: Callback to be executed at every keypress of the search text input. Parameters of callback:
