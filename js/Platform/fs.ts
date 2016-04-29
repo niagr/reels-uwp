@@ -154,7 +154,7 @@ namespace Platform.fs {
                 super(file);
             }
             
-            file (success_cb: (blob: Blob) => void, error_cb: (err: Error) => void) {
+            public file (success_cb: (blob: Blob) => void, error_cb: (err: Error) => void) {
                 Windows.Storage.FileIO.readBufferAsync(this.storage_item).done((buffer) => {
                     let dataReader = Windows.Storage.Streams.DataReader.fromBuffer(buffer);
                     let bytes = new Uint8Array(buffer.length);
@@ -164,13 +164,12 @@ namespace Platform.fs {
                 }, (err) => {
                     error_cb(err);
                 });
-                success_cb(MSApp.createFileFromStorageFile(this.storage_item));
             }
             
-            write (blob: Blob, callback: Function) {
+            public write (blob: Blob, callback: Function) {
                 var reader = new FileReader();
                 reader.onloadend = (ev) => {
-                    var bytes = new Uint8Array((ev.target as any).result);
+                    var bytes = new Uint8Array((ev.target as FileReader).result);
                     try {
                         Windows.Storage.FileIO.writeBytesAsync(this.storage_item, bytes as any).done(() => {
                             callback();
@@ -221,6 +220,8 @@ namespace Platform.fs {
             
             private getItem (name: string, itemType: "file"|"dir", flags: ICreateFlags, callback: (res: Entry, e: Error) => void): void {
                 
+                
+                
                 let process = (exists: boolean, item?: Windows.Storage.IStorageItem) => {
                     
                     let createAndReturnFile = () => {
@@ -266,6 +267,8 @@ namespace Platform.fs {
                             case "ETYPE":
                                 callback(null, new Error(name + " is a directory."));
                                 break;
+                            default:
+                                callback(null, new Error(name + ": something went wrong getting this file"));
                         }
                     }
                     
@@ -280,6 +283,8 @@ namespace Platform.fs {
                             case "ETYPE":
                                 callback(null, new Error(name + " is a file."));
                                 break;
+                            default:
+                                callback(null, new Error(name + ": something went wrong getting this file"));
                         }
                     }
                     
@@ -293,13 +298,18 @@ namespace Platform.fs {
                     
                 }
                 
-                this.storage_item.tryGetItemAsync(name).then((item) => {
-                    if (item == null) {
-                        process(false, null);
-                    }
+                
+                
+                this.storage_item.getItemAsync(name).done((item) => {
+                    //console.log("found item: " + item);
+                    // if (item == null) {
+                    //     console.log(`could not get file ${name}`);
+                    //     process(false, null);
+                    // }
                     process(true, item);
-                }).done(null, (e: Error) => {
-                    
+                }, (err) => {
+                    console.log("err " + err.message);
+                    process(false, null);
                 });
                 
             }
@@ -650,12 +660,16 @@ namespace Platform.fs {
                 let dirPicker = new Windows.Storage.Pickers.FolderPicker();
                 dirPicker.fileTypeFilter.replaceAll(["*"] as any);
                 dirPicker.pickSingleFolderAsync().done((folder) => {
+                    if (folder == null)
+                        return;
                     success(new WinRTDirEntry(folder));
                 }, failure);
             } else if (chooser_type == 'file') {
                 let filePicker = new Windows.Storage.Pickers.FileOpenPicker();
                 filePicker.fileTypeFilter.replaceAll(["*"] as any);
                 filePicker.pickSingleFileAsync().done((file) => {
+                    if (file == null)
+                        return;
                     success(new WinRTFileEntry(file));
                 }, failure);
             } else {
@@ -796,7 +810,7 @@ namespace Platform.fs {
                     success(new WinRTDirEntry(storageItem as Windows.Storage.StorageFolder));
                 } 
             }, (err) => {
-                failure(new Error(`Count not restore entry: ${err.message}`));
+                failure(new Error(`Could not restore entry: ${err.message}`));
             });
 
         }

@@ -170,10 +170,14 @@ class Movie {
     public set_poster_blob (blob: Blob) {
 
         this._poster_blob = blob;
-        this._is_poster_loaded = true;
-        this._onPosterLoaded.forEach((callback) => {
-                callback(this._poster_blob);
-        });
+        if (!this._is_poster_loaded) {
+            this._is_poster_loaded = true;
+            this._onPosterLoaded.forEach((callback) => {
+                    callback(this._poster_blob);
+            });
+            this._onPosterLoaded = [];
+        }
+        
 
     }
 
@@ -185,12 +189,7 @@ class Movie {
     public load_poster () {
 
         Utils.get_image(this.movie_info.posterpath, (blob) => {
-            this._poster_blob = blob;
-            this._is_poster_loaded = true;
-//            _onPosterLoaded(_poster_blob);
-            this._onPosterLoaded.forEach((callback) => {
-                callback(this._poster_blob);
-            });
+            this.set_poster_blob(blob);
         });
 
     }

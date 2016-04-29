@@ -49,28 +49,36 @@ class Controller {
         Platform.localStorage.get("config", function(value: any, error: Error) {
 
             if (error) {
-                    console.debug("No genre list cache found: " + error.message);
-            } else if (value.genres) {
-                console.log("genres list cache found.");
-                that.config.genres = value.genres;
+                console.debug("No stored config data or could not load it: " + error.message);
+            } else if (value) {
+                console.log("config data found");
+                if (value.genres) {
+                    console.log("genres list cache found.");
+                    that.config.genres = value.genres;
+                } else {
+                    console.log("genres list cache not found");
+                }
             }
-            finish();
+			
+			global.tmdb.get_genres(function(err: Error, genres_arr: IGenre[]) {
+				if (!err) {
+					//that.config.genres = genres_arr;
+					that.config.genres = genres_arr;
+					Platform.localStorage.setJSON({
+						config: that.config
+					}, function() {
+						console.log("Retrieved and wrote new genres list.")
+					});
+				} else {
+					console.error(err.message);
+				}
+	            finish();			
+			});
+			
 
         });
 
-        global.tmdb.get_genres(function(err: Error, genres_arr: IGenre[]) {
-            if (!err) {
-                //that.config.genres = genres_arr;
-                that.config.genres = genres_arr;
-                Platform.localStorage.setJSON({
-                    config: that.config
-                }, function() {
-                    console.log("Retrieved and wrote new genres list.")
-                });
-            } else {
-                console.error(err.message);
-            }
-        });
+        
 
         function finish() {
             that.gui_controller = new GUIController(that);
@@ -81,6 +89,9 @@ class Controller {
 
 
     			Platform.fs.appDataDir(function (data_dir) {
+					if (!data_dir) {
+						throw new Error("Could not get app data dir.");
+					}
                     that.app_data_dir = data_dir;
                     that.load_stored_movies();
                 })
@@ -304,17 +315,18 @@ class Controller {
             storage_obj[id] = entry;
             Platform.localStorage.setJSON(storage_obj, function() {
                 console.debug("stored");
+				movie.load_poster();
+				var image_file_name = movie.movie_info.id.toString() + ".jpg";
+				movie.poster(function(blob: Blob) {
+					that.app_data_dir.getFile(image_file_name, {create:true}, function(entry) {
+						entry.write(blob, function () {
+							console.debug("wrote image file");
+						});
+					});
+				});
             });
 
-            movie.load_poster();
-            var image_file_name = movie.movie_info.id.toString() + ".jpg";
-            movie.poster(function(blob: Blob) {
-                that.app_data_dir.getFile(image_file_name, {create:true}, function(entry) {
-                    entry.write(blob, function () {
-                        console.debug("wrote image file");
-                    });
-                });
-            });
+            
 
             function err(e) {
                 console.debug(e.message);
@@ -326,6 +338,8 @@ class Controller {
 
     // loads the stored movies and displays then on the view
 	private load_stored_movies () {
+		
+		console.log('Loading stored movies.');
 
 		var that = this;
 
@@ -335,9 +349,21 @@ class Controller {
         Platform.localStorage.get(null, onLoaded);
 
         function onLoaded(stored) {
-        console.log("aaaaaa");
+			
+			delete stored.config;
+			
+			let keys = Object.keys(stored);
+			if (keys.length < 1) {
+				console.log("No stored movies found");
+				return;
+			} else {
+				console.log(`Stored movies found:`);
+				console.log(keys);
+			}
+        
 
             var count = 0;
+			var c = 0;
 
             $.each(stored, function(key, item: IMovieSavedInfo) {
 
@@ -354,23 +380,26 @@ class Controller {
                             //console.debug("copied " + p);
                         }
                     }
-                    // movie.movie_info.id = item.id;
-                    // movie.movie_info.title = item.title;
-                    // movie.movie_info.imdb_id = item.imdb_id;
-                    // movie.movie_info.year = item.year;
-                    // movie.movie_info.tagline = item.tagline;
-                    // movie.movie_info.description = item.description;
-                    // movie.movie_info.cast = item.cast;
-                    // movie.movie_info.crew = item.crew;
-					// movie.movie_info.genres = item.genres;
-                    // movie.movie_info.posterpath = item.posterpath;
-                    that.app_data_dir.getFile(movie.movie_info.id.toString() + ".jpg", {create: false}, function(ent: Platform.fs.FileEntry, error: Error) {
-                        ent.file(function(file) {
+					
+					
+                   	//console.log(`${c++}: Reached here`);
+					let posterPath = movie.movie_info.id.toString() + ".jpg"
+                    that.app_data_dir.getFile(posterPath, {create: false}, function(ent: Platform.fs.FileEntry, error: Error) {
+                        if (error) {
+							//console.log(c++ + `: Could not load image file ${posterPath}`);
+							return;
+						} else {
+							// myConsole.log(`${c++}: Loaded image file ${posterPath}`);
+						}
+						// console.log(c++ + ": callback reached");
+						ent.file(function(file) {
                             movie.set_poster_blob(file);
                         }, err);
+						
                     });
-                    new_movie_list.push(movie);
-                    ready();
+					new_movie_list.push(movie);
+					ready();
+                    
 
                 }
 
@@ -378,6 +407,7 @@ class Controller {
                     err(Error('Could not restore file entry: ' + e.message))
                     ready();
                 }
+				
 
                 if (key != "config")
                     Platform.fs.restoreEntry(item.video_file_ID, onRestoreEntry, onRestoreFailure);
@@ -385,8 +415,8 @@ class Controller {
                     ready();
 
             });
-
             function ready() {
+				// console.log((count) + ": ready called");
                 count++;
                 if (count == Object.keys(stored).length)
                     proceed();

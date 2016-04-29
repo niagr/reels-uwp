@@ -5,7 +5,13 @@ var __extends = (this && this.__extends) || function (d, b) {
 };
 'use strict';
 console.log('yo mama');
-$("document").ready(main);
+var myConsole;
+var posterCount = 1;
+$("document").ready(function () {
+    $("#start-button").click(main);
+    $("#platform-button").click(Platform.init);
+    myConsole = new MyConsole($('#debug'));
+});
 // Convenience fuction to print to console
 function say(str) {
     console.log(str);
@@ -14,7 +20,65 @@ var controller;
 function main() {
     Platform.init();
     controller = new Controller();
+    $('#clear-button').click(function (ev) {
+        window.localStorage.clear();
+    });
 }
+function printDebug(str) {
+    var $deb = $("#debug");
+    $deb.append($("<br>"));
+    $deb.append(str);
+}
+function foo2() {
+    var k = 1;
+    Windows.Storage.ApplicationData.current.localFolder.getItemsAsync()
+        .done(function (items) {
+        var namesArray = (items.map(function (item) {
+            return item.name;
+        }));
+        console.log(namesArray);
+        var _loop_1 = function(name_1) {
+            Windows.Storage.ApplicationData.current.localFolder.getItemAsync(name_1).done(function (item) {
+                console.log(k++ + ': Found item ' + name_1);
+            }, function (err) {
+                console.log("Could not find item " + name_1 + ": " + err);
+            });
+        };
+        for (var _i = 0, namesArray_1 = namesArray; _i < namesArray_1.length; _i++) {
+            var name_1 = namesArray_1[_i];
+            _loop_1(name_1);
+        }
+    }, function (err) {
+        console.log(err);
+    });
+}
+function foo() {
+    Platform.init();
+    Platform.fs.appDataDir(function (dataDir) {
+        dataDir.getChildren(function (children) {
+            var i = 1;
+            for (var _i = 0, children_1 = children; _i < children_1.length; _i++) {
+                var child = children_1[_i];
+                var name_2 = child.get_base_name();
+                dataDir.getFile(name_2, { create: false }, function (file, err) {
+                    console.log(i++ + ": Found file " + file.get_base_name());
+                });
+            }
+        });
+    });
+}
+var MyConsole = (function () {
+    function MyConsole(_widget) {
+        this.widget = _widget;
+        this.store = [];
+    }
+    MyConsole.prototype.log = function (msg) {
+        this.store.push(msg);
+        this.widget.append($('<br>'));
+        this.widget.append(msg);
+    };
+    return MyConsole;
+}());
 // This object controls the general tasks except the view.
 //var say: Function;
 var global = global || {};
@@ -36,33 +100,42 @@ var Controller = (function () {
         //         load genres list
         Platform.localStorage.get("config", function (value, error) {
             if (error) {
-                console.debug("No genre list cache found: " + error.message);
+                console.debug("No stored config data or could not load it: " + error.message);
             }
-            else if (value.genres) {
-                console.log("genres list cache found.");
-                that.config.genres = value.genres;
+            else if (value) {
+                console.log("config data found");
+                if (value.genres) {
+                    console.log("genres list cache found.");
+                    that.config.genres = value.genres;
+                }
+                else {
+                    console.log("genres list cache not found");
+                }
             }
-            finish();
-        });
-        global.tmdb.get_genres(function (err, genres_arr) {
-            if (!err) {
-                //that.config.genres = genres_arr;
-                that.config.genres = genres_arr;
-                Platform.localStorage.setJSON({
-                    config: that.config
-                }, function () {
-                    console.log("Retrieved and wrote new genres list.");
-                });
-            }
-            else {
-                console.error(err.message);
-            }
+            global.tmdb.get_genres(function (err, genres_arr) {
+                if (!err) {
+                    //that.config.genres = genres_arr;
+                    that.config.genres = genres_arr;
+                    Platform.localStorage.setJSON({
+                        config: that.config
+                    }, function () {
+                        console.log("Retrieved and wrote new genres list.");
+                    });
+                }
+                else {
+                    console.error(err.message);
+                }
+                finish();
+            });
         });
         function finish() {
             that.gui_controller = new GUIController(that);
             // Set up filesystem object
             if (!that.app_data_dir) {
                 Platform.fs.appDataDir(function (data_dir) {
+                    if (!data_dir) {
+                        throw new Error("Could not get app data dir.");
+                    }
                     that.app_data_dir = data_dir;
                     that.load_stored_movies();
                 });
@@ -219,13 +292,13 @@ var Controller = (function () {
             storage_obj[id] = entry;
             Platform.localStorage.setJSON(storage_obj, function () {
                 console.debug("stored");
-            });
-            movie.load_poster();
-            var image_file_name = movie.movie_info.id.toString() + ".jpg";
-            movie.poster(function (blob) {
-                that.app_data_dir.getFile(image_file_name, { create: true }, function (entry) {
-                    entry.write(blob, function () {
-                        console.debug("wrote image file");
+                movie.load_poster();
+                var image_file_name = movie.movie_info.id.toString() + ".jpg";
+                movie.poster(function (blob) {
+                    that.app_data_dir.getFile(image_file_name, { create: true }, function (entry) {
+                        entry.write(blob, function () {
+                            console.debug("wrote image file");
+                        });
                     });
                 });
             });
@@ -236,12 +309,23 @@ var Controller = (function () {
     };
     // loads the stored movies and displays then on the view
     Controller.prototype.load_stored_movies = function () {
+        console.log('Loading stored movies.');
         var that = this;
         var new_movie_list = [];
         Platform.localStorage.get(null, onLoaded);
         function onLoaded(stored) {
-            console.log("aaaaaa");
+            delete stored.config;
+            var keys = Object.keys(stored);
+            if (keys.length < 1) {
+                console.log("No stored movies found");
+                return;
+            }
+            else {
+                console.log("Stored movies found:");
+                console.log(keys);
+            }
             var count = 0;
+            var c = 0;
             $.each(stored, function (key, item) {
                 function err(e) {
                     console.debug(e.message);
@@ -253,17 +337,16 @@ var Controller = (function () {
                             movie.movie_info[p] = item[p];
                         }
                     }
-                    // movie.movie_info.id = item.id;
-                    // movie.movie_info.title = item.title;
-                    // movie.movie_info.imdb_id = item.imdb_id;
-                    // movie.movie_info.year = item.year;
-                    // movie.movie_info.tagline = item.tagline;
-                    // movie.movie_info.description = item.description;
-                    // movie.movie_info.cast = item.cast;
-                    // movie.movie_info.crew = item.crew;
-                    // movie.movie_info.genres = item.genres;
-                    // movie.movie_info.posterpath = item.posterpath;
-                    that.app_data_dir.getFile(movie.movie_info.id.toString() + ".jpg", { create: false }, function (ent, error) {
+                    //console.log(`${c++}: Reached here`);
+                    var posterPath = movie.movie_info.id.toString() + ".jpg";
+                    that.app_data_dir.getFile(posterPath, { create: false }, function (ent, error) {
+                        if (error) {
+                            //console.log(c++ + `: Could not load image file ${posterPath}`);
+                            return;
+                        }
+                        else {
+                        }
+                        // console.log(c++ + ": callback reached");
                         ent.file(function (file) {
                             movie.set_poster_blob(file);
                         }, err);
@@ -281,6 +364,7 @@ var Controller = (function () {
                     ready();
             });
             function ready() {
+                // console.log((count) + ": ready called");
                 count++;
                 if (count == Object.keys(stored).length)
                     proceed();
@@ -314,7 +398,7 @@ var GUIController = (function () {
         this.genreview = new ListView();
         this.$genre_filter = $('#genres-list');
         this.genre_list = [];
-        console.log(this.$genre_filter);
+        //console.log(this.$genre_filter);
         this.current_view = 'listview';
         this.playing = false;
         this.genre_all_added = false;
@@ -604,10 +688,13 @@ var Movie = (function () {
     Movie.prototype.set_poster_blob = function (blob) {
         var _this = this;
         this._poster_blob = blob;
-        this._is_poster_loaded = true;
-        this._onPosterLoaded.forEach(function (callback) {
-            callback(_this._poster_blob);
-        });
+        if (!this._is_poster_loaded) {
+            this._is_poster_loaded = true;
+            this._onPosterLoaded.forEach(function (callback) {
+                callback(_this._poster_blob);
+            });
+            this._onPosterLoaded = [];
+        }
     };
     /*
         Fetches the poster from the url specified in the Movie's movie_info object
@@ -616,12 +703,7 @@ var Movie = (function () {
     Movie.prototype.load_poster = function () {
         var _this = this;
         Utils.get_image(this.movie_info.posterpath, function (blob) {
-            _this._poster_blob = blob;
-            _this._is_poster_loaded = true;
-            //            _onPosterLoaded(_poster_blob);
-            _this._onPosterLoaded.forEach(function (callback) {
-                callback(_this._poster_blob);
-            });
+            _this.set_poster_blob(blob);
         });
     };
     // called by the party that wants the poster
@@ -682,6 +764,7 @@ var MovieItem = (function () {
         this.movie.poster(function (blob) {
             var img_url = URL.createObjectURL(blob);
             _this.$poster.attr("src", img_url);
+            // myConsole.log(`${posterCount++}: set image source of movie item for ${this.movie.movie_info.id}`);
         });
         this.$movie_title.text(this.movie.movie_info.title);
         this.$director.text("Directed by " + this.movie.getDirector());
@@ -821,7 +904,7 @@ var Platform;
                 }, function (err) {
                     error_cb(err);
                 });
-                success_cb(MSApp.createFileFromStorageFile(this.storage_item));
+                //success_cb(MSApp.createFileFromStorageFile(this.storage_item));
             };
             WinRTFileEntry.prototype.write = function (blob, callback) {
                 var _this = this;
@@ -902,6 +985,8 @@ var Platform;
                             case "ETYPE":
                                 callback(null, new Error(name + " is a directory."));
                                 break;
+                            default:
+                                callback(null, new Error(name + ": something went wrong getting this file"));
                         }
                     };
                     var errorFolder = function (e) {
@@ -915,6 +1000,8 @@ var Platform;
                             case "ETYPE":
                                 callback(null, new Error(name + " is a file."));
                                 break;
+                            default:
+                                callback(null, new Error(name + ": something went wrong getting this file"));
                         }
                     };
                     if (itemType == "file") {
@@ -924,12 +1011,16 @@ var Platform;
                         createEntry(flags, exists, isFolder, createAndReturnFolder, returnFolder, errorFolder);
                     }
                 };
-                this.storage_item.tryGetItemAsync(name).then(function (item) {
-                    if (item == null) {
-                        process(false, null);
-                    }
+                this.storage_item.getItemAsync(name).done(function (item) {
+                    //console.log("found item: " + item);
+                    // if (item == null) {
+                    //     console.log(`could not get file ${name}`);
+                    //     process(false, null);
+                    // }
                     process(true, item);
-                }).done(null, function (e) {
+                }, function (err) {
+                    console.log("err " + err.message);
+                    process(false, null);
                 });
             };
             WinRTDirEntry.prototype.getFile = function (name, flags, callback) {
@@ -1191,6 +1282,8 @@ var Platform;
                 var dirPicker = new Windows.Storage.Pickers.FolderPicker();
                 dirPicker.fileTypeFilter.replaceAll(["*"]);
                 dirPicker.pickSingleFolderAsync().done(function (folder) {
+                    if (folder == null)
+                        return;
                     success(new WinRTDirEntry(folder));
                 }, failure);
             }
@@ -1198,6 +1291,8 @@ var Platform;
                 var filePicker = new Windows.Storage.Pickers.FileOpenPicker();
                 filePicker.fileTypeFilter.replaceAll(["*"]);
                 filePicker.pickSingleFileAsync().done(function (file) {
+                    if (file == null)
+                        return;
                     success(new WinRTFileEntry(file));
                 }, failure);
             }
@@ -1295,7 +1390,7 @@ var Platform;
                     success(new WinRTDirEntry(storageItem));
                 }
             }, function (err) {
-                failure(new Error("Count not restore entry: " + err.message));
+                failure(new Error("Could not restore entry: " + err.message));
             });
         }
     })(fs = Platform.fs || (Platform.fs = {}));
@@ -1303,10 +1398,15 @@ var Platform;
 var Platform;
 (function (Platform) {
     Platform.platform = "unknown";
+    var initiatated = false;
     /**
      * Initialises the Platform layer. Call before using any other function in this module.
      */
     function init() {
+        if (initiatated) {
+            console.log("Platform already initated");
+            return;
+        }
         if (typeof Windows !== 'undefined') {
             Platform.platform = 'WinRT';
         }
@@ -1321,6 +1421,7 @@ var Platform;
             Platform.localStorage = localStorageNW;
         }
         Platform.fs.init();
+        initiatated = true;
     }
     Platform.init = init;
     var localStorageNW = {
@@ -1365,7 +1466,6 @@ var Platform;
                     error: Error if key was not found.
         */
         get: function (query, callback) {
-            console.log('get');
             if (typeof query == "array") {
             }
             else if (typeof query == "string") {

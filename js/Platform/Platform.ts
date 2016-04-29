@@ -2,12 +2,18 @@ namespace Platform {
 
     export var platform: "unknown" | "node-webkit" | "WinRT";
     platform = "unknown";
+    var initiatated = false;
 
 
     /**
      * Initialises the Platform layer. Call before using any other function in this module.
      */
     export function init () {
+        
+        if (initiatated) {
+            console.log("Platform already initated");
+            return;                        
+        }
         
         if (typeof Windows !== 'undefined') {
             platform = 'WinRT';
@@ -24,6 +30,8 @@ namespace Platform {
         }
         
         Platform.fs.init();
+        
+        initiatated = true;
             
     }
     
@@ -40,7 +48,7 @@ namespace Platform {
 
             @callback: callback to be executed when the value has been stored.
         */
-        setJSON: function (entry, callback: (err: Error)) {
+        setJSON: function (entry, callback: (err: Error) => void) {
 
             // Check entry is object
             if (typeof entry != "object") {
@@ -75,8 +83,7 @@ namespace Platform {
                     error: Error if key was not found.
         */
         get: function(query, callback) {
-            
-            console.log('get');
+        
 
             if (typeof query == "array") {
 

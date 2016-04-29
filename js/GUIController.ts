@@ -86,7 +86,7 @@ class GUIController {
 
         this.genre_list = [];
 
-        console.log(this.$genre_filter);
+        //console.log(this.$genre_filter);
 
         this.current_view = 'listview';
 

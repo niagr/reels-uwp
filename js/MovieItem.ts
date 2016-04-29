@@ -82,6 +82,7 @@ class MovieItem {
         this.movie.poster((blob) => {
             var img_url = URL.createObjectURL(blob);
             this.$poster.attr("src", img_url);
+            // myConsole.log(`${posterCount++}: set image source of movie item for ${this.movie.movie_info.id}`);
         });
 
         this.$movie_title.text(this.movie.movie_info.title);
