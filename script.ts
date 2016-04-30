@@ -10,14 +10,15 @@ $("document").ready(function () {
     main();
 });
 
-var controller;
+let controller: Controller;
 function main() {
 	Platform.init();
     controller = new Controller();
 }
 
-function printDebug (str: string) {
-    let $deb = $("#debug");
-    $deb.append($("<br>"));
-    $deb.append(str);
-}
+// Debugging UI - enable in index.html too.
+// function printDebug (str: string) {
+//     let $deb = $("#debug");
+//     $deb.append($("<br>"));
+//     $deb.append(str);
+// }

@@ -298,7 +298,7 @@ class Controller {
 		// callback called when all movies have finished getting info
 		function onInfoSaved() {
 			Utils.clean_list(new_movie_list, remove_list);
-			console.log("oh yeah");
+			// console.log("oh yeah");
 			that.movie_list = that.movie_list.concat(new_movie_list);
 
 		}
@@ -313,14 +313,14 @@ class Controller {
             var storage_obj = {};
             storage_obj[id] = entry;
             Platform.localStorage.setJSON(storage_obj, function() {
-                console.debug("stored");
+                // console.debug("stored");
 				movie.load_poster();
 				var image_file_name = movie.movie_info.id.toString() + ".jpg";
 				movie.poster(function(blob: Blob) {
 					that.app_data_dir.getFile(image_file_name, {create:true}, function(entry) {
 						entry.write(blob, function (err) {
 							if (!err) {
-								console.debug(`Wrote image file: ${image_file_name}`);							
+								// console.debug(`Wrote image file: ${image_file_name}`);							
 							} else {
 								console.debug(`Could not write image file ${image_file_name}: ${err}`);
 							}

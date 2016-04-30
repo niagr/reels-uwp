@@ -4,83 +4,25 @@ var __extends = (this && this.__extends) || function (d, b) {
     d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 };
 'use strict';
-console.log('yo mama');
-var myConsole;
-var posterCount = 1;
 $("document").ready(function () {
-    $("#start-button").click(main);
-    $("#platform-button").click(Platform.init);
-    myConsole = new MyConsole($('#debug'));
+    // Debugging UI - enable in index.html too
+    // $("#start-button").click(main);
+    // $("#platform-button").click(Platform.init);
+    // $("#clear-button").click(window.localStorage.clear);
+    main();
 });
-// Convenience fuction to print to console
-function say(str) {
-    console.log(str);
-}
 var controller;
 function main() {
     Platform.init();
     controller = new Controller();
-    $('#clear-button').click(function (ev) {
-        window.localStorage.clear();
-    });
 }
-function printDebug(str) {
-    var $deb = $("#debug");
-    $deb.append($("<br>"));
-    $deb.append(str);
-}
-function foo2() {
-    var k = 1;
-    Windows.Storage.ApplicationData.current.localFolder.getItemsAsync()
-        .done(function (items) {
-        var namesArray = (items.map(function (item) {
-            return item.name;
-        }));
-        console.log(namesArray);
-        var _loop_1 = function(name_1) {
-            Windows.Storage.ApplicationData.current.localFolder.getItemAsync(name_1).done(function (item) {
-                console.log(k++ + ': Found item ' + name_1);
-            }, function (err) {
-                console.log("Could not find item " + name_1 + ": " + err);
-            });
-        };
-        for (var _i = 0, namesArray_1 = namesArray; _i < namesArray_1.length; _i++) {
-            var name_1 = namesArray_1[_i];
-            _loop_1(name_1);
-        }
-    }, function (err) {
-        console.log(err);
-    });
-}
-function foo() {
-    Platform.init();
-    Platform.fs.appDataDir(function (dataDir) {
-        dataDir.getChildren(function (children) {
-            var i = 1;
-            for (var _i = 0, children_1 = children; _i < children_1.length; _i++) {
-                var child = children_1[_i];
-                var name_2 = child.get_base_name();
-                dataDir.getFile(name_2, { create: false }, function (file, err) {
-                    console.log(i++ + ": Found file " + file.get_base_name());
-                });
-            }
-        });
-    });
-}
-var MyConsole = (function () {
-    function MyConsole(_widget) {
-        this.widget = _widget;
-        this.store = [];
-    }
-    MyConsole.prototype.log = function (msg) {
-        this.store.push(msg);
-        this.widget.append($('<br>'));
-        this.widget.append(msg);
-    };
-    return MyConsole;
-}());
+// Debugging UI - enable in index.html too.
+// function printDebug (str: string) {
+//     let $deb = $("#debug");
+//     $deb.append($("<br>"));
+//     $deb.append(str);
+// } 
 // This object controls the general tasks except the view.
-//var say: Function;
 var global = global || {};
 var Controller = (function () {
     function Controller() {
@@ -177,7 +119,7 @@ var Controller = (function () {
                 if (child_list.length > 0) {
                     child_list.forEach(function (entry) {
                         if (entry.isDirectory()) {
-                            //							say((Array(rec_level + 1).join(" ")) + "-- DIRECTORY: " + entry.name);
+                            //							console.log((Array(rec_level + 1).join(" ")) + "-- DIRECTORY: " + entry.name);
                             // load the files of this directory
                             rec_load_files(entry, rec_level + 1, callback);
                         }
@@ -189,7 +131,7 @@ var Controller = (function () {
                 async_num--;
                 async_return();
             }
-            //			say("Started reading directory: " + dir.name);
+            //			console.log("Started reading directory: " + dir.name);
             // Called at the end of every async dir enumeration
             // Joins/waits for all async requests before proceeding
             // Checks the number of asyn methods in operation and moved on if all have retuned
@@ -223,7 +165,7 @@ var Controller = (function () {
                     });
                     if (dupe == false) {
                         new_file_list.push(file);
-                        say("video file: " + file.get_base_name());
+                        console.log("video file: " + file.get_base_name());
                     }
                 }
             });
@@ -243,10 +185,10 @@ var Controller = (function () {
         // Mark the ones that could not be recognised.
         new_movie_list.forEach(function (movie, index, list) {
             if (movie.infer_title_and_year()) {
-                say("title: " + movie.search_title + "; year: " + movie.search_year);
+                console.log("title: " + movie.search_title + "; year: " + movie.search_year);
             }
             else {
-                say(" Could not infer the name of file: " + movie.video_file.get_base_name());
+                console.log(" Could not infer the name of file: " + movie.video_file.get_base_name());
                 remove_list.push(index);
             }
             ;
@@ -279,7 +221,7 @@ var Controller = (function () {
         // callback called when all movies have finished getting info
         function onInfoSaved() {
             Utils.clean_list(new_movie_list, remove_list);
-            console.log("oh yeah");
+            // console.log("oh yeah");
             that.movie_list = that.movie_list.concat(new_movie_list);
         }
         // saves the info of a movie into localstorage
@@ -291,14 +233,13 @@ var Controller = (function () {
             var storage_obj = {};
             storage_obj[id] = entry;
             Platform.localStorage.setJSON(storage_obj, function () {
-                console.debug("stored");
+                // console.debug("stored");
                 movie.load_poster();
                 var image_file_name = movie.movie_info.id.toString() + ".jpg";
                 movie.poster(function (blob) {
                     that.app_data_dir.getFile(image_file_name, { create: true }, function (entry) {
                         entry.write(blob, function (err) {
                             if (!err) {
-                                console.debug("Wrote image file: " + image_file_name);
                             }
                             else {
                                 console.debug("Could not write image file " + image_file_name + ": " + err);
