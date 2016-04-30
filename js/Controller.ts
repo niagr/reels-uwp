@@ -1,6 +1,5 @@
 // This object controls the general tasks except the view.
 
-//var say: Function;
 
 var global: any = global || {};
 
@@ -161,12 +160,12 @@ class Controller {
 					child_list.forEach(function(entry) {
 
 						if (entry.isDirectory()) {
-//							say((Array(rec_level + 1).join(" ")) + "-- DIRECTORY: " + entry.name);
+//							console.log((Array(rec_level + 1).join(" ")) + "-- DIRECTORY: " + entry.name);
 							// load the files of this directory
 							rec_load_files(entry as Platform.fs.DirEntry, rec_level + 1, callback);
 						} else {
 							file_list.push(entry as Platform.fs.FileEntry);
-//							say((Array(rec_level + 1).join(" ")) + "-- " + entry.name);
+//							console.log((Array(rec_level + 1).join(" ")) + "-- " + entry.name);
 						}
 
 					});
@@ -178,7 +177,7 @@ class Controller {
 
 			}
 
-//			say("Started reading directory: " + dir.name);
+//			console.log("Started reading directory: " + dir.name);
 
 			// Called at the end of every async dir enumeration
 			// Joins/waits for all async requests before proceeding
@@ -224,7 +223,7 @@ class Controller {
 					});
 					if (dupe == false) {
 						new_file_list.push(file);
-						say("video file: " + file.get_base_name());
+						console.log("video file: " + file.get_base_name());
 					}
 				}
 
@@ -254,9 +253,9 @@ class Controller {
 		new_movie_list.forEach(function(movie: Movie, index, list) {
 
 			if (movie.infer_title_and_year()) {
-				say("title: " + movie.search_title + "; year: " + movie.search_year);
+				console.log("title: " + movie.search_title + "; year: " + movie.search_year);
 			} else {
-                say(" Could not infer the name of file: " + movie.video_file.get_base_name());
+                console.log(" Could not infer the name of file: " + movie.video_file.get_base_name());
 				remove_list.push(index);
 			};
 
