@@ -296,8 +296,13 @@ var Controller = (function () {
                 var image_file_name = movie.movie_info.id.toString() + ".jpg";
                 movie.poster(function (blob) {
                     that.app_data_dir.getFile(image_file_name, { create: true }, function (entry) {
-                        entry.write(blob, function () {
-                            console.debug("wrote image file");
+                        entry.write(blob, function (err) {
+                            if (!err) {
+                                console.debug("Wrote image file: " + image_file_name);
+                            }
+                            else {
+                                console.debug("Could not write image file " + image_file_name + ": " + err);
+                            }
                         });
                     });
                 });
@@ -895,7 +900,7 @@ var Platform;
                 _super.call(this, file);
             }
             WinRTFileEntry.prototype.file = function (success_cb, error_cb) {
-                Windows.Storage.FileIO.readBufferAsync(this.storage_item).done(function (buffer) {
+                Windows.Storage.FileIO.readBufferAsync(this.storage_item).then(function (buffer) {
                     var dataReader = Windows.Storage.Streams.DataReader.fromBuffer(buffer);
                     var bytes = new Uint8Array(buffer.length);
                     dataReader.readBytes(bytes);
@@ -903,21 +908,26 @@ var Platform;
                     success_cb(new Blob([bytes]));
                 }, function (err) {
                     error_cb(err);
+                }).done(undefined, function (err) {
+                    error_cb(err);
                 });
-                //success_cb(MSApp.createFileFromStorageFile(this.storage_item));
             };
             WinRTFileEntry.prototype.write = function (blob, callback) {
                 var _this = this;
+                console.log("writing file " + this.storage_item.name);
                 var reader = new FileReader();
                 reader.onloadend = function (ev) {
                     var bytes = new Uint8Array(ev.target.result);
                     try {
-                        Windows.Storage.FileIO.writeBytesAsync(_this.storage_item, bytes).done(function () {
-                            callback();
+                        Windows.Storage.FileIO.writeBytesAsync(_this.storage_item, bytes).then(function () {
+                            callback(null);
+                        }).done(undefined, function (err) {
+                            callback(err);
                         });
                     }
                     catch (e) {
-                        console.log(e.message);
+                        // console.log(e.message);
+                        callback(e);
                     }
                 };
                 reader.onerror = function (ev) {

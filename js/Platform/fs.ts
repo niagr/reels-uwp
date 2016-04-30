@@ -155,7 +155,7 @@ namespace Platform.fs {
             }
             
             public file (success_cb: (blob: Blob) => void, error_cb: (err: Error) => void) {
-                Windows.Storage.FileIO.readBufferAsync(this.storage_item).done((buffer) => {
+                Windows.Storage.FileIO.readBufferAsync(this.storage_item).then((buffer) => {
                     let dataReader = Windows.Storage.Streams.DataReader.fromBuffer(buffer);
                     let bytes = new Uint8Array(buffer.length);
                     dataReader.readBytes(bytes);
@@ -163,19 +163,25 @@ namespace Platform.fs {
                     success_cb(new Blob([bytes]));
                 }, (err) => {
                     error_cb(err);
-                });
+                }).done(undefined, (err) => {
+                    error_cb(err);
+                })
             }
             
-            public write (blob: Blob, callback: Function) {
+            public write (blob: Blob, callback: (err: Error) => void) {
+                console.log(`writing file ${this.storage_item.name}`);
                 var reader = new FileReader();
                 reader.onloadend = (ev) => {
                     var bytes = new Uint8Array((ev.target as FileReader).result);
                     try {
-                        Windows.Storage.FileIO.writeBytesAsync(this.storage_item, bytes as any).done(() => {
-                            callback();
+                        Windows.Storage.FileIO.writeBytesAsync(this.storage_item, bytes as any).then(() => {
+                            callback(null);
+                        }).done(undefined, (err) => {
+                            callback(err);
                         });
                     } catch (e) {
-                        console.log(e.message);
+                        // console.log(e.message);
+                        callback(e);
                     }
                     
                 }

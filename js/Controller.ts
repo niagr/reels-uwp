@@ -319,8 +319,12 @@ class Controller {
 				var image_file_name = movie.movie_info.id.toString() + ".jpg";
 				movie.poster(function(blob: Blob) {
 					that.app_data_dir.getFile(image_file_name, {create:true}, function(entry) {
-						entry.write(blob, function () {
-							console.debug("wrote image file");
+						entry.write(blob, function (err) {
+							if (!err) {
+								console.debug(`Wrote image file: ${image_file_name}`);							
+							} else {
+								console.debug(`Could not write image file ${image_file_name}: ${err}`);
+							}
 						});
 					});
 				});
