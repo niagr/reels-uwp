@@ -99,6 +99,7 @@
     <Content Include="images\Wide310x150Logo.scale-200.png" />
     <Content Include="index.html" />
     <Content Include="js\lib\jquery-2.0.3.js" />
+    <TypeScriptCompile Include="js\GenreSelector.ts" />
     <TypeScriptCompile Include="js\typings\es6-promise.d.ts" />
     <TypeScriptCompile Include="script.ts" />
     <TypeScriptCompile Include="js\Controller.ts" />

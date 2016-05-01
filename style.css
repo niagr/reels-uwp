@@ -308,12 +308,26 @@ html, body {
     list-style-type: none;
 }
 
-#genres-list {
+.navbar {
+    background-color: #2F333D;
     color: rgb(136, 141, 160);
-    margin: 10px 0px 0px 40px;
+    margin: 10px 0px 0px 0px;
     line-height: 20px;
     font-size: 14px;
-    font-weight: bold;
+    font-weight: normal;
     font-family: sans-serif;
     list-style-type: none;
+}
+
+.navbar li {
+    padding: 2px 0px 2px 20px;
+}
+
+.navbar li:not(.selected):hover {
+    background-color: #3A3F4D;
+}
+
+.navbar li.selected {
+    background-color: #565A66;
+    color: white;
 }

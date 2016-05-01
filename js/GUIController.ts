@@ -3,6 +3,10 @@ interface IGenre {
     name: string;
 }
 
+const GENRE_ALL: IGenre =  {
+    id: -1,
+    name: "All"
+}
 
 
 // This object controls the user interface
@@ -53,6 +57,8 @@ class GUIController {
     private genre_all_added : boolean;
 
     private genres_list : IGenre;
+    
+    private navbar: NavBar;
 
 
     constructor (controller) {
@@ -121,54 +127,17 @@ class GUIController {
         });
 
         this.$content_container.append(this.main_view.$main_container);
-
-
+        
+        this.navbar = new NavBar($('#navbar'), this.show_genre.bind(this));
+        
+        this.show_genre(GENRE_ALL);
 
 	}
 
 
-    /*
-        Adds an array of genres to the list and the filter if not already present
-    */
-    private add_genres (genres: IGenre[]) {
-
-        if (this.genre_all_added == false) {
-            this.add_genre_filter_item({
-                id: -1,
-                name: "All"
-            });
-            this.genre_all_added = true;
-        }
-
-        genres.forEach((genre_from_movie: IGenre) => {
-            var found = false;
-            this.genre_list.forEach((genre_from_list: IGenre) => {
-                if (genre_from_movie.id === genre_from_list.id) {
-                    found = true;
-                }
-            });
-            if (found === false) {
-                this.genre_list.push(genre_from_movie);
-                this.add_genre_filter_item(genre_from_movie);
-            }
-        });
-
-    }
-
-
-    private add_genre_filter_item (genre: IGenre) {
-
-        var $genre_filer_item = $('<li>' + genre.name + '</li>');
-        $genre_filer_item.click((ev) => {
-            this.show_genre(genre);
-            console.log("clicked" + genre.name);
-        });
-        this.$genre_filter.append($genre_filer_item);
-
-    }
-
 
     private show_genre (req_genre: IGenre) {
+        this.navbar.setSelected(req_genre);
         this.genreview.clear();
         if (req_genre.name == 'All') {
             this.toggle_view('listview');
@@ -192,7 +161,7 @@ class GUIController {
 
         this.searchview.clear();
         if (query == '') {
-            this.toggle_view('listview');
+            this.show_genre(GENRE_ALL);
         } else {
             this.toggle_view('searchview');
             var regex = new RegExp(query, 'i');
@@ -246,7 +215,7 @@ class GUIController {
 
         this.main_view.add_item(movie_item);
 
-        this.add_genres(movie.movie_info.genres)
+        this.navbar.addItems(movie.movie_info.genres);
 
     }
 

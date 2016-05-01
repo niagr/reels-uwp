@@ -3,6 +3,67 @@ var __extends = (this && this.__extends) || function (d, b) {
     function __() { this.constructor = d; }
     d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 };
+var ITEM_ALL = {
+    id: -1,
+    name: "All"
+};
+var NavBar = (function () {
+    function NavBar(_$container, callback) {
+        if (!_$container) {
+            throw new Error('Invalid container element.');
+        }
+        else
+            this.$container = _$container;
+        this.$container.addClass('navbar');
+        if (callback) {
+            this.onItemSelected(callback);
+        }
+        this.widgetForItemName = {};
+        this.itemAllAdded = false;
+        this.itemList = [];
+        if (this.itemAllAdded == false) {
+            this.addItem(ITEM_ALL);
+            this.itemAllAdded = true;
+        }
+    }
+    NavBar.prototype.onItemSelected = function (callback) {
+        this.onItemSelectedCallback = callback;
+    };
+    /*
+        Adds an array of items to the list and the filter if not already present
+    */
+    NavBar.prototype.addItems = function (items) {
+        var _this = this;
+        items.forEach(function (item_from_movie) {
+            var found = false;
+            _this.itemList.forEach(function (item_from_list) {
+                if (item_from_movie.id === item_from_list.id) {
+                    found = true;
+                }
+            });
+            if (found === false) {
+                _this.itemList.push(item_from_movie);
+                _this.addItem(item_from_movie);
+            }
+        });
+    };
+    // BAD: recursive wrt setSelected
+    // public forceSelectitem (item: IItem) {
+    //     this.setSelected(item);
+    // }
+    NavBar.prototype.addItem = function (item) {
+        var _this = this;
+        var $item = $('<li>' + item.name + '</li>');
+        $item.click(function (ev) { return _this.onItemSelectedCallback(item); });
+        this.$container.append($item);
+        this.widgetForItemName[item.name] = $item;
+    };
+    NavBar.prototype.setSelected = function (item) {
+        this.$container.children('li').removeClass('selected');
+        this.widgetForItemName[item.name].addClass('selected');
+    };
+    return NavBar;
+}());
 'use strict';
 $("document").ready(function () {
     // Debugging UI - enable in index.html too
@@ -325,6 +386,10 @@ var Controller = (function () {
     };
     return Controller;
 }());
+var GENRE_ALL = {
+    id: -1,
+    name: "All"
+};
 // This object controls the user interface
 var GUIController = (function () {
     function GUIController(controller) {
@@ -368,43 +433,46 @@ var GUIController = (function () {
             _this.expand_sidebar();
         });
         this.$content_container.append(this.main_view.$main_container);
+        this.navbar = new NavBar($('#navbar'), this.show_genre.bind(this));
+        this.show_genre(GENRE_ALL);
     };
     /*
         Adds an array of genres to the list and the filter if not already present
     */
-    GUIController.prototype.add_genres = function (genres) {
-        var _this = this;
-        if (this.genre_all_added == false) {
-            this.add_genre_filter_item({
-                id: -1,
-                name: "All"
-            });
-            this.genre_all_added = true;
-        }
-        genres.forEach(function (genre_from_movie) {
-            var found = false;
-            _this.genre_list.forEach(function (genre_from_list) {
-                if (genre_from_movie.id === genre_from_list.id) {
-                    found = true;
-                }
-            });
-            if (found === false) {
-                _this.genre_list.push(genre_from_movie);
-                _this.add_genre_filter_item(genre_from_movie);
-            }
-        });
-    };
-    GUIController.prototype.add_genre_filter_item = function (genre) {
-        var _this = this;
-        var $genre_filer_item = $('<li>' + genre.name + '</li>');
-        $genre_filer_item.click(function (ev) {
-            _this.show_genre(genre);
-            console.log("clicked" + genre.name);
-        });
-        this.$genre_filter.append($genre_filer_item);
-    };
+    // private add_genres (genres: IGenre[]) {
+    //     if (this.genre_all_added == false) {
+    //         this.add_genre_filter_item({
+    //             id: -1,
+    //             name: "All"
+    //         });
+    //         this.genre_all_added = true;
+    //     }
+    //     genres.forEach((genre_from_movie: IGenre) => {
+    //         var found = false;
+    //         this.genre_list.forEach((genre_from_list: IGenre) => {
+    //             if (genre_from_movie.id === genre_from_list.id) {
+    //                 found = true;
+    //             }
+    //         });
+    //         if (found === false) {
+    //             this.genre_list.push(genre_from_movie);
+    //             this.add_genre_filter_item(genre_from_movie);
+    //         }
+    //     });
+    // }
+    // private add_genre_filter_item (genre: IGenre) {
+    //     var $genre_filer_item = $('<li>' + genre.name + '</li>');
+    //     $genre_filer_item.click((ev) => {
+    //         this.show_genre(genre);
+    //         console.log("clicked" + genre.name);
+    //         $('#genres-list li').removeClass('selected');       
+    //         $(ev.target).addClass('selected');
+    //     });
+    //     this.$genre_filter.append($genre_filer_item);
+    // }
     GUIController.prototype.show_genre = function (req_genre) {
         var _this = this;
+        this.navbar.setSelected(req_genre);
         this.genreview.clear();
         if (req_genre.name == 'All') {
             this.toggle_view('listview');
@@ -426,7 +494,7 @@ var GUIController = (function () {
         var _this = this;
         this.searchview.clear();
         if (query == '') {
-            this.toggle_view('listview');
+            this.show_genre(GENRE_ALL);
         }
         else {
             this.toggle_view('searchview');
@@ -468,7 +536,7 @@ var GUIController = (function () {
         });
         this.movie_item_list.push(movie_item);
         this.main_view.add_item(movie_item);
-        this.add_genres(movie.movie_info.genres);
+        this.navbar.addItems(movie.movie_info.genres);
     };
     GUIController.prototype.play_movie = function (movie_item) {
         Platform.fs.openFileWithSystemDefault(movie_item.movie.video_file);
